@@ -1,20 +1,22 @@
+import os
 import asyncio
 import requests
-from twilio.rest import Client
 from flask import Flask
-from vapi_python import Vapi
 import aiohttp
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
+class VapiCaller:
+    def __init__(self) -> None:
 
+        self.headers = {
+    "Authorization": f"Bearer {os.getenv('VAPI_TOKEN')}",
+    "Content-Type": "application/json"
+    }
 
-account_sid = 'ACb0989059a1642cf6b9d2a10737699436'
-auth_token = '1fe074f0c7a2c8b18af5fe9008ae4ca7'
-# account_sid = os.environ['TWILIO_ACCOUNT_SID']
-# auth_token = os.environ['TWILIO_AUTH_TOKEN']
-vapi = Vapi(api_key='dd1db0d2-effa-4877-9b3e-26e6f47000f3')
-
-system_prompt = """Opening Message: "Hello! This is Roman from the relight team. Have you got a moment to chat about the outdoor relighting campaign?"
+        self.system_prompt = """Opening Message: "Hello! This is Roman from the relight team. Have you got a moment to chat about the outdoor relighting campaign?"
 
 Scenario 1 (Not available): "Thank you for your time", use the endCall function.
 
@@ -28,8 +30,7 @@ If Yes: "Great! Have you had an opportunity to complete and return the forms? (P
 If No: "No problem, please check your email. Do you have any questions about the relight project?  (Wait for response) If no, thank for your time! use the endCall function"
 
 Always be attentive to cues like "goodbye" or "thank you" to gracefully end the call. """
-
-faq_content = """
+        self.faq_content = """
 Relight - Frequently Asked Questions
 
 QUESTION - Who qualifies for the RELIGHT Project?
@@ -95,10 +96,8 @@ QUESTION - How is the order dispatched?
 
 Following the validation, the order is dispatched via Chronopost. You then have a 30-day window to complete the installation. Once the installation is finished, photos of the installation is submitted along with a sworn certificate of installation.
 """
-combined_promptEnglish = system_prompt + faq_content
-
-
-system_prompt_french = """Message d'ouverture : "Bonjour ! Ici Roman de l'équipe de rééclairage. Avez-vous un moment pour discuter de la campagne de rééclairage extérieur ?"
+        self.combined_promptEnglish = self.system_prompt + self.faq_content
+        self.system_prompt_french = """Message d'ouverture : "Bonjour ! Ici Roman de l'équipe de rééclairage. Avez-vous un moment pour discuter de la campagne de rééclairage extérieur ?"
 
 Scénario 1 (Non disponible) : "Merci pour votre temps", utilisez la fonction endCall.
 
@@ -112,8 +111,7 @@ Si oui : « Super ! Avez-vous eu l'occasion de remplir et de retourner les for
 Si non : "Pas de problème, veuillez vérifier votre courrier électronique. Avez-vous des questions sur le projet relight ? (Attendez la réponse) Si non, merci pour votre temps ! utilisez la fonction endCall"
 
 Soyez toujours attentif aux signaux comme « au revoir » ou « merci » pour mettre fin à l'appel avec élégance."""
-
-faq_content_french = """
+        self.faq_content_french = """
 Relight - Foire aux questions
 
 QUESTION - Qui est éligible au projet RELIGHT ?
@@ -173,127 +171,117 @@ Soyez vigilant, si un contrôle a lieu et que vous avez installé un éclairage 
 QUESTION - Comment la commande est-elle expédiée ?
 
 Suite à la validation, la commande est expédiée via Chronopost. Vous disposez alors d’une fenêtre de 30 jours pour terminer l’installation. Une fois l'installation terminée, des photos de l'installation sont remises accompagnées d'un certificat d'installation sur l'honneur. """
+        self.combined_promptFrench= self.system_prompt_french + self.faq_content_french
 
-combined_promptFrench= system_prompt_french + faq_content_french
+        self.airtable_api_key = f"{os.getenv('AIRTABLE_API_KEY')}"
+        self.airtable_base_id = f"{os.getenv('AIRTABLE_BASE_ID')}"
+        self.airtable_table_name = 'toCallRelight'
+        self.phone_number_id = f"{os.getenv('PHONE_NUMBER_ID')}"
 
-airtable_api_key = 'pataHjrlaAoc3cU3D.8deb4956f6fc95545c08ba11d4bc3e9a22a5c80a69aca41ccd907e2d091d07a9'
-airtable_base_id = 'appqfgdKS4D9AC3Z8'
-airtable_table_name = 'toCallRelight'
+        self.url = "https://api.vapi.ai/call/phone"
+        self.airtable_api_url = f'https://api.airtable.com/v0/{self.airtable_base_id}/toCallRelight'
 
-airtable_api_url = 'https://api.airtable.com/v0/appqfgdKS4D9AC3Z8/toCallRelight'
+    async def check_call_status(self, call_sid):
+        check_call_url = f"https://api.vapi.ai/call/{call_sid}"
+        while True:
+            try:
+                async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
+                    async with session.get(check_call_url, headers=self.headers) as response:
+                        status_data = await response.json()
+                        call_status = status_data.get('status')
+                        print("Call Status:",call_status)
+                        if call_status in ['ended', 'over']:
+                            break
+                        else:
+                            await asyncio.sleep(5)
+            except Exception as e:
+                print(f"Exception: {e}")
+                break
 
-from_number = '+33175850850'
+    async def make_call(self, phone_data):
+        first_name = phone_data['first_name']
+        payload = {
+        "assistant": {
+            "endCallFunctionEnabled": True,
+            "endCallMessage": "Thank you for your time, do have a wonderful day.",
+            "fillersEnabled": True,
+            "firstMessage": f"Bonjour {first_name}, Ici Roman de l'équipe de relight. Avez-vous un moment pour discuter de la campagne de relighting extérieur?",
+        #    "firstMessage": f"Hello {first_name}, This is Roman from the relight team. Have you got a moment to chat about the outdoor relighting campaign?",
+            "forwardingPhoneNumber": "+33667289667",
+            "interruptionsEnabled": False,
+            # "language": "en",
+            "language": "fr",
+            "liveTranscriptsEnabled": True,
+            "model": {
+                "model": "gpt-3.5-turbo",
+                "provider": "openai",
+                "systemPrompt": self.combined_promptFrench
+                # "systemPrompt": self.combined_promptEnglish
+            },
+            "name": "Roman",
+            "recordingEnabled": True,
+            "silenceTimeoutSeconds": 10,
+            "transcriber": {"provider": "deepgram"},
+            "voice": {
+                "voiceId": "NjIGRxLGYEgrjVKOmkQk",
+                "provider": "11labs",
+            
+            },
+            "voicemailMessage": "Hello, are you calling about the relight project?"
+        },
+        "customer": {
+            "name": phone_data["first_name"],
+            # "number": phone_data["phone_number"],
+            "number": "+447823681158",
+        },
+        "phoneNumberId": "a6e6b1a2-b477-4732-9988-01178097ba08"
+        # "phoneNumberId": f"{self.phone_number_id}"
+        }
 
-headers = {
-    "Authorization": "Bearer dd1db0d2-effa-4877-9b3e-26e6f47000f3",
-    "Content-Type": "application/json"
-    }
-
-client = Client(account_sid, auth_token)
-
-async def check_call_status(call_sid):
-    call_url = f"https://api.vapi.ai/call/{call_sid}"
-    while True:
         try:
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-                async with session.get(call_url, headers=headers) as response:
-                    status_data = await response.json()
-                    call_status = status_data.get('status')
-                    print("Call Status:",call_status)
-                    if call_status in ['ended', 'over']:
-                        break
-                    else:
-                        await asyncio.sleep(5)
+                async with session.post(self.url, json=payload, headers=self.headers) as response:
+                    result = await response.json()
+                    id = result.get('id')
+                    if result.get("status") == 'queued':
+                        await self.check_call_status(id)
+
         except Exception as e:
-            print(f"Exception: {e}")
-            break
+            print(f"Error making call: {str(e)}")
 
+    def fetch_airtable_data(self):
+        phone_numbers = []
 
+        try:
+            headers = {
+                'Authorization': f'Bearer {self.airtable_api_key}',
+            }
+            response = requests.get(self.airtable_api_url, headers=headers)
+            data = response.json()
+
+            if 'records' in data:
+                for record in data['records']:
+                    fields = record.get('fields', {})
+                    first_name = fields.get('Firstname', 'Unknown')
+                    phone_number = fields.get('number', '')
+                    
+                    if first_name and phone_number:
+                        phone_numbers.append({'first_name': first_name, 'phone_number': phone_number})
+
+        except Exception as e:
+            print(f"Error fetching data from Airtable: {str(e)}")
+
+        return phone_numbers
+
+vapi_caller = VapiCaller()
 
 @app.route("/call-customer", methods=['POST'])
-async def make_call(phone_data):
-    url = "https://api.vapi.ai/call/phone"
-
-    first_name = phone_data['first_name']
-
-    payload = {
-
-    "assistant": {
-        "endCallFunctionEnabled": True,
-        "endCallMessage": "Thank you for your time, do have a wonderful day.",
-        "fillersEnabled": True,
-        "firstMessage": f"Bonjour {first_name}, Ici Roman de l'équipe de relight. Avez-vous un moment pour discuter de la campagne de relighting extérieur?",
-    #    "firstMessage": f"Hello {first_name}, This is Roman from the relight team. Have you got a moment to chat about the outdoor relighting campaign?",
-        "forwardingPhoneNumber": "+33667289667",
-        "interruptionsEnabled": False,
-        # "language": "en",
-        "language": "fr",
-        "liveTranscriptsEnabled": True,
-        "model": {
-            "model": "gpt-3.5-turbo",
-            "provider": "openai",
-            "systemPrompt": combined_promptFrench
-            # "systemPrompt": combined_promptEnglish
-        },
-        "name": "Roman",
-        "recordingEnabled": True,
-        "silenceTimeoutSeconds": 10,
-        "transcriber": {"provider": "deepgram"},
-        "voice": {
-            "voiceId": "NjIGRxLGYEgrjVKOmkQk",
-            "provider": "11labs",
-          
-        },
-        "voicemailMessage": "Hello, are you calling about the relight project?"
-    },
-    "customer": {
-        "name": phone_data["first_name"],
-        # "number": phone_data["phone_number"],
-        "number": "+447823681158",
-    },
-    "phoneNumberId": "a6e6b1a2-b477-4732-9988-01178097ba08"
-    }
-
-
-
-    try:
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-            async with session.post(url, json=payload, headers=headers) as response:
-                result = await response.json()
-                id = result.get('id')
-                if result.get("status") == 'queued':
-                    await check_call_status(id)
-
-    except Exception as e:
-        print(f"Error making call: {str(e)}")
-
-def fetch_airtable_data():
-    phone_numbers = []
-
-    try:
-        headers = {
-            'Authorization': f'Bearer {airtable_api_key}',
-        }
-        response = requests.get(airtable_api_url, headers=headers)
-        data = response.json()
-
-        if 'records' in data:
-            for record in data['records']:
-                fields = record.get('fields', {})
-                first_name = fields.get('Firstname', 'Unknown')
-                phone_number = fields.get('number', '')
-                
-                if first_name and phone_number:
-                    phone_numbers.append({'first_name': first_name, 'phone_number': phone_number})
-
-    except Exception as e:
-        print(f"Error fetching data from Airtable: {str(e)}")
-
-    return phone_numbers
+async def run_call():
+    fetched_data = vapi_caller.fetch_airtable_data()
+    for phone_data in fetched_data:
+        await vapi_caller.make_call(phone_data)
+    return "Calls made"
 
 if __name__ == '__main__':
-    fetched_data = fetch_airtable_data()
-    for phone_data in fetched_data:
-        asyncio.run(make_call(phone_data))
-
+    app.run(debug=True)
 

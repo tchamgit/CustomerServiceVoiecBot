@@ -1,7 +1,7 @@
 import os
 import asyncio
 import requests
-from flask import Flask
+from flask import Flask, request
 import aiohttp
 from dotenv import load_dotenv
 
@@ -198,6 +198,30 @@ Suite à la validation, la commande est expédiée via Chronopost. Vous disposez
                 print(f"Exception: {e}")
                 break
 
+    def fetch_airtable_data(self):
+        phone_numbers = []
+
+        try:
+            headers = {
+                'Authorization': f'Bearer {self.airtable_api_key}',
+            }
+            response = requests.get(self.airtable_api_url, headers=headers)
+            data = response.json()
+
+            if 'records' in data:
+                for record in data['records']:
+                    fields = record.get('fields', {})
+                    first_name = fields.get('Firstname', 'Unknown')
+                    phone_number = fields.get('number', '')
+                    
+                    if first_name and phone_number:
+                        phone_numbers.append({'first_name': first_name, 'phone_number': phone_number})
+
+        except Exception as e:
+            print(f"Error fetching data from Airtable: {str(e)}")
+
+        return phone_numbers
+
     async def make_call(self, phone_data):
         first_name = phone_data['first_name']
         payload = {
@@ -249,38 +273,35 @@ Suite à la validation, la commande est expédiée via Chronopost. Vous disposez
         except Exception as e:
             print(f"Error making call: {str(e)}")
 
-    def fetch_airtable_data(self):
-        phone_numbers = []
 
-        try:
-            headers = {
-                'Authorization': f'Bearer {self.airtable_api_key}',
-            }
-            response = requests.get(self.airtable_api_url, headers=headers)
-            data = response.json()
-
-            if 'records' in data:
-                for record in data['records']:
-                    fields = record.get('fields', {})
-                    first_name = fields.get('Firstname', 'Unknown')
-                    phone_number = fields.get('number', '')
-                    
-                    if first_name and phone_number:
-                        phone_numbers.append({'first_name': first_name, 'phone_number': phone_number})
-
-        except Exception as e:
-            print(f"Error fetching data from Airtable: {str(e)}")
-
-        return phone_numbers
 
 vapi_caller = VapiCaller()
 
 @app.route("/call-customer", methods=['POST'])
 async def run_call():
-    fetched_data = vapi_caller.fetch_airtable_data()
-    for phone_data in fetched_data:
-        await vapi_caller.make_call(phone_data)
-    return "Calls made"
+    try:
+        if not request.data:
+            fetched_data = vapi_caller.fetch_airtable_data()
+            for phone_data in fetched_data:
+                try:
+                    await vapi_caller.make_call(phone_data)
+                except Exception as e:
+                    return f"Error making call with Airtable data: {str(e)}", 500
+            return "Calls made using Airtable data"
+        request_data = request.json
+    except Exception as e:
+        return f"Error parsing JSON data: {str(e)}", 400
+    
+    specified_phone_data = request_data.get("phone_data", []) if request_data else []
+
+    if specified_phone_data:
+        for phone_data in specified_phone_data:
+            try:
+                await vapi_caller.make_call(phone_data)
+            except Exception as e:
+                return f"Error making call with specified data: {str(e)}", 500
+        result_message = "Calls made using specified data."
+    return result_message
 
 if __name__ == '__main__':
     app.run(debug=True)

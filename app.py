@@ -128,8 +128,8 @@ class VapiCaller:
         },
         "customer": {
             "name": phone_data["first_name"],
-            # "number": phone_data["phone_number"],
-            "number": "+447823681158",
+            "number": phone_data["phone_number"],
+            # "number": "+447823681158",
         },
         "phoneNumberId": "a6e6b1a2-b477-4732-9988-01178097ba08"
         # "phoneNumberId": f"{self.phone_number_id}"

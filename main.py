@@ -1,9 +1,13 @@
 import os
 import asyncio
 import requests
-from flask import Flask, request
-from flask_cors import CORS
 import aiohttp
+import schedule
+from datetime import datetime, timedelta 
+import time
+import jwt
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 from dotenv import load_dotenv
 from db import save_call_information, get_existing_status, get_all_calls;
 from prompts import combined_promptEnglish, combined_promptFrench;
@@ -11,6 +15,11 @@ load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+
+admin_email = 'julienetoke@gmail.com'
+admin_password = '23ARelightAI'
+
+SECRET_KEY = 'relightSecretKey'
 class VapiCaller:
     def __init__(self) -> None:
 
@@ -82,7 +91,6 @@ class VapiCaller:
         try:
             db_calls = await get_all_calls()
             if db_calls:
-                print("Database calls:", db_calls)
                 return db_calls
             else:
                 print("No calls in the database")
@@ -136,6 +144,8 @@ class VapiCaller:
         except Exception as e:
             print(f"Error making call: {str(e)}")
 
+ 
+
 
 
 vapi_caller = VapiCaller()
@@ -165,6 +175,39 @@ async def run_call():
         result_message = "Calls made using specified data."
     return result_message
 
+
+async def scheduled_call(phone_data):
+    try:
+        await vapi_caller.make_call(phone_data)
+    except Exception as e:
+        print(f"Error making scheduled call: {str(e)}")
+
+@app.route("/schedule-call", methods=['POST'])
+def schedule_call():
+    try:
+        request_data = request.json
+        phone_data = request_data.get("phone_data")
+
+        if not phone_data:
+            return "Invalid request data", 400
+        
+        scheduled_time_str = request_data.get("scheduled_time")
+        scheduled_time = datetime.strptime(scheduled_time_str, "%Y-%m-%dT%H:%M")
+
+        schedule.every().day.at(scheduled_time.strftime("%H:%M")).do(
+            lambda: asyncio.run(scheduled_call(phone_data))
+        )
+
+        return "Call scheduled successfully"
+    except Exception as e:
+        return f"Error scheduling call: {str(e)}", 500
+    
+def run_scheduler():
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+
 @app.route("/get-all-calls", methods=['GET'])
 async def get_calls():
     try:
@@ -173,6 +216,29 @@ async def get_calls():
     except Exception as e:
         return f"Error parsing JSON data: {str(e)}", 400
     
+@app.route("/authenticate", methods=['POST'])
+def authenticate():
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+
+        if email == admin_email and password == admin_password:
+            payload = {
+                'email': email,
+                'exp': datetime.utcnow() + timedelta(days=1)
+            }
+            token = jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+
+            return jsonify({'token': token})
+        return jsonify({'error': 'Invalid credentials'}), 401
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
 if __name__ == '__main__':
+    import threading
+    scheduler_thread = threading.Thread(target=run_scheduler)
+    scheduler_thread.start()
+
     app.run(debug=True)
 

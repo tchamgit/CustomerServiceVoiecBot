@@ -226,13 +226,13 @@ def authenticate():
         password = data.get('password')
 
         if email == admin_email and password == admin_password:
-            payload = {
-                'email': email,
-                'exp': datetime.utcnow() + timedelta(days=1)
-            }
-            token = jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+            # payload = {
+            #     'email': email,
+            #     'exp': datetime.utcnow() + timedelta(days=1)
+            # }
+            # token = jwt.encode(payload, SECRET_KEY, algorithm='HS256')
 
-            return jsonify({'token': token})
+            return jsonify({'User Authenticated'})
         return jsonify({'error': 'Invalid credentials'}), 401
     except Exception as e:
         return jsonify({'error': str(e)}), 500

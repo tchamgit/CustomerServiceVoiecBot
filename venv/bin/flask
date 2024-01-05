@@ -1,4 +1,4 @@
-#!/Users/due/Documents/repos/freelanceProjects/twilioInteractiveVoiceResponsebot/venv/bin/python3.11
+#!/Users/due/Documents/repos/freelanceProjects/twilioInteractiveVoiceResponsebot/venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys

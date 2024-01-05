@@ -5,7 +5,6 @@ import aiohttp
 import schedule
 from datetime import datetime, timedelta 
 import time
-import jwt
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -226,13 +225,8 @@ def authenticate():
         password = data.get('password')
 
         if email == admin_email and password == admin_password:
-            payload = {
-                'email': email,
-                'exp': datetime.utcnow() + timedelta(days=1)
-            }
-            token = jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+            return jsonify({'User Authenticated'})
 
-            return jsonify({'token': token})
         return jsonify({'error': 'Invalid credentials'}), 401
     except Exception as e:
         return jsonify({'error': str(e)}), 500

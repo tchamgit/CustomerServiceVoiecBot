@@ -225,7 +225,7 @@ def authenticate():
         password = data.get('password')
 
         if email == admin_email and password == admin_password:
-            return jsonify({'User Authenticated'})
+            return jsonify({'message': 'User Authenticated'})
 
         return jsonify({'error': 'Invalid credentials'}), 401
     except Exception as e:

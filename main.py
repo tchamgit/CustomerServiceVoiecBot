@@ -40,6 +40,7 @@ class VapiCaller:
 
     async def check_call_status(self, call_sid):
         check_call_url = f"https://api.vapi.ai/call/{call_sid}"
+        in_progress_saved = False
         while True:
             try:
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
@@ -55,8 +56,9 @@ class VapiCaller:
                             if existing_status != 'completed':
                                 save_call_information(id, first_name, phone_number, 'not picked')
                             break
-                        elif  call_status in ['in-progress']:
+                        elif  call_status in ['in-progress'] and not in_progress_saved:
                             save_call_information(id, first_name, phone_number, 'completed')
+                            in_progress_saved = True
                         else:
                             await asyncio.sleep(5)
             except Exception as e:

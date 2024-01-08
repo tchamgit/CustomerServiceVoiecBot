@@ -15,8 +15,10 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-admin_email = 'julienetoke@gmail.com'
-admin_password = '23ARelightAI'
+
+
+admin_email = f"{os.getenv('ADMIN_EMAIL')}"
+admin_password = f"{os.getenv('ADMIN_PASSWORD')}"
 
 SECRET_KEY = 'relightSecretKey'
 class VapiCaller:
@@ -145,10 +147,6 @@ class VapiCaller:
         except Exception as e:
             print(f"Error making call: {str(e)}")
 
- 
-
-
-
 vapi_caller = VapiCaller()
 
 @app.route("/call-customer", methods=['POST'])
@@ -177,9 +175,10 @@ async def run_call():
     return result_message
 
 
-async def scheduled_call(phone_data):
+async def scheduled_call(phone_data_list):
     try:
-        await vapi_caller.make_call(phone_data)
+        for phone_data in phone_data_list:
+            await vapi_caller.make_call(phone_data)
     except Exception as e:
         print(f"Error making scheduled call: {str(e)}")
 
@@ -195,11 +194,19 @@ def schedule_call():
         scheduled_time_str = request_data.get("scheduled_time")
         scheduled_time = datetime.strptime(scheduled_time_str, "%Y-%m-%dT%H:%M")
 
-        schedule.every().day.at(scheduled_time.strftime("%H:%M")).do(
+        # schedule.every().day.at(scheduled_time.strftime("%H:%M")).do(
+        #     lambda: asyncio.run(scheduled_call(phone_data))
+        # )
+        now = datetime.now()
+        if scheduled_time <= now:
+            return jsonify({"error": "Scheduled time must be in the future"}), 400
+        
+        interval = (scheduled_time - datetime.now()).total_seconds()
+        schedule.every(interval).seconds.do(
             lambda: asyncio.run(scheduled_call(phone_data))
         )
-
         return "Call scheduled successfully"
+
     except Exception as e:
         return f"Error scheduling call: {str(e)}", 500
     

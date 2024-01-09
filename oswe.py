@@ -60,9 +60,8 @@ class VapiCaller:
                             break
                         elif  call_status in ['in-progress'] and not in_progress_saved:
                             save_call_information(id, first_name, phone_number, 'completed')
+                            await self.update_airtable_status(fieldId, 'Recensement OK')
                             in_progress_saved = True
-                            if fieldId != '':
-                                await self.update_airtable_status(fieldId, 'Recensement OK')
                         else:
                             await asyncio.sleep(5)
 
@@ -123,9 +122,6 @@ class VapiCaller:
 
     async def make_call(self, phone_data):
         first_name = phone_data['first_name']
-        fieldId = phone_data.get('id', '') 
-
-
         payload = {
         "assistant": {
             "endCallFunctionEnabled": True,
@@ -166,6 +162,7 @@ class VapiCaller:
                 async with session.post(self.url, json=payload, headers=self.headers) as response:
                     result = await response.json()
                     id = result.get('id')
+                    fieldId = phone_data["id"]
                     if result.get("status") == 'queued':
                         await self.check_call_status(id, fieldId)
         except Exception as e:
@@ -187,7 +184,7 @@ async def schedule_airtable_fetch():
         except Exception as e:
             print(f"Error scheduling Airtable fetch: {str(e)}")
 
-schedule.every().day.at("13:00").do(lambda: asyncio.run(schedule_airtable_fetch()))
+schedule.every().day.at("15:21").do(lambda: asyncio.run(schedule_airtable_fetch()))
 
 async def scheduled_call(phone_data_list):
         try:

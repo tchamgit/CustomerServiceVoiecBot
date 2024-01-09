@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from airtable import airtable
 from dotenv import load_dotenv
 from db import save_call_information, get_existing_status, get_all_calls;
 from prompts import combined_promptEnglish, combined_promptFrench;
@@ -19,6 +20,7 @@ CORS(app)
 
 admin_email = f"{os.getenv('ADMIN_EMAIL')}"
 admin_password = f"{os.getenv('ADMIN_PASSWORD')}"
+
 
 SECRET_KEY = 'relightSecretKey'
 class VapiCaller:
@@ -39,9 +41,12 @@ class VapiCaller:
         self.url = "https://api.vapi.ai/call/phone"
         self.airtable_api_url = f'https://api.airtable.com/v0/{self.airtable_base_id}/toCallRelight'
 
-    async def check_call_status(self, call_sid):
+
+    # async def check_call_status(self, call_sid):
+    async def check_call_status(self, call_sid, fieldId):
         check_call_url = f"https://api.vapi.ai/call/{call_sid}"
         in_progress_saved = False
+
         while True:
             try:
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
@@ -52,6 +57,7 @@ class VapiCaller:
                         first_name = status_data.get('customer').get('name')
                         call_status = status_data.get('status')
                         print("Call Status:",call_status)
+                        
                         if call_status in ['ended']:
                             existing_status = get_existing_status(id)
                             if existing_status != 'completed':
@@ -59,12 +65,22 @@ class VapiCaller:
                             break
                         elif  call_status in ['in-progress'] and not in_progress_saved:
                             save_call_information(id, first_name, phone_number, 'completed')
+                            await self.update_airtable_status(fieldId, 'Recensement OK')
                             in_progress_saved = True
                         else:
                             await asyncio.sleep(5)
+
             except Exception as e:
                 print(f"Exception: {e}")
                 break
+
+    async def update_airtable_status(self, record_id, new_status):
+        at = airtable.Airtable(self.airtable_base_id, self.airtable_api_key)
+        data = {"Statut dossier": new_status}
+        try:
+            update = at.update('toCallRelight', record_id, data)
+        except Exception as e:
+            print(f"Error updating Airtable status: {str(e)}")
 
     def fetch_airtable_data(self):
         phone_numbers = []
@@ -78,12 +94,14 @@ class VapiCaller:
 
             if 'records' in data:
                 for record in data['records']:
+                    id = record.get('id', '')
                     fields = record.get('fields', {})
                     first_name = fields.get('Firstname', 'Unknown')
                     phone_number = fields.get('number', '')
-                    
+                    relation = fields.get('Relation', 'Unknown')
+                    status_dossier = fields.get('Statut dossier', 'Unknown')
                     if first_name and phone_number:
-                        phone_numbers.append({'first_name': first_name, 'phone_number': phone_number})
+                        phone_numbers.append({"id": id, 'first_name': first_name, 'phone_number': phone_number,"relation": relation, "status_dossier": status_dossier })
 
         except Exception as e:
             print(f"Error fetching data from Airtable: {str(e)}")
@@ -142,12 +160,38 @@ class VapiCaller:
                 async with session.post(self.url, json=payload, headers=self.headers) as response:
                     result = await response.json()
                     id = result.get('id')
+                    fieldId = phone_data["id"]
+                    print("fieldIdMakeCall", fieldId)
                     if result.get("status") == 'queued':
-                        await self.check_call_status(id)
+                        await self.check_call_status(id, fieldId)
         except Exception as e:
             print(f"Error making call: {str(e)}")
+            
 
 vapi_caller = VapiCaller()
+
+async def schedule_airtable_fetch():
+        try:
+            phone_data_list = vapi_caller.fetch_airtable_data()
+            filtered_data = [
+                phone_data for phone_data in phone_data_list
+                if phone_data.get("relation") == "Séquence en cours"
+                and phone_data.get("status_dossier") == "Rencensement en attente"
+            ]
+            if filtered_data:
+                await scheduled_call(filtered_data)
+        except Exception as e:
+            print(f"Error scheduling Airtable fetch: {str(e)}")
+
+schedule.every().day.at("15:08").do(lambda: asyncio.run(schedule_airtable_fetch()))
+
+async def scheduled_call(phone_data_list):
+        try:
+            for phone_data in phone_data_list:
+                await vapi_caller.make_call(phone_data)
+        except Exception as e:
+            print(f"Error making scheduled call: {str(e)}")
+
 
 @app.route("/call-customer", methods=['POST'])
 async def run_call():
@@ -174,14 +218,6 @@ async def run_call():
         result_message = "Calls made using specified data."
     return result_message
 
-
-async def scheduled_call(phone_data_list):
-    try:
-        for phone_data in phone_data_list:
-            await vapi_caller.make_call(phone_data)
-    except Exception as e:
-        print(f"Error making scheduled call: {str(e)}")
-
 @app.route("/schedule-call", methods=['POST'])
 def schedule_call():
     try:
@@ -194,9 +230,6 @@ def schedule_call():
         scheduled_time_str = request_data.get("scheduled_time")
         scheduled_time = datetime.strptime(scheduled_time_str, "%Y-%m-%dT%H:%M")
 
-        # schedule.every().day.at(scheduled_time.strftime("%H:%M")).do(
-        #     lambda: asyncio.run(scheduled_call(phone_data))
-        # )
         now = datetime.now()
         if scheduled_time <= now:
             return jsonify({"error": "Scheduled time must be in the future"}), 400

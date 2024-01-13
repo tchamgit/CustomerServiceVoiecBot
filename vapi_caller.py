@@ -1,28 +1,14 @@
+# vapi_caller.py
 import os
-import asyncio
+from airtable import airtable
 import requests
 import aiohttp
-import schedule
-from datetime import datetime, timedelta
-import time
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from airtable import airtable
-from dotenv import load_dotenv
-from db import save_call_information, get_existing_status, get_all_calls;
-from prompts import combined_promptEnglish, combined_promptFrench;
-load_dotenv()
-
-app = Flask(__name__)
-CORS(app)
-
-admin_email = f"{os.getenv('ADMIN_EMAIL')}"
-admin_password = f"{os.getenv('ADMIN_PASSWORD')}"
-scheduled_jobs = {}
+import asyncio
+from prompts import combined_promptEnglish, combined_promptFrench
+from db import save_call_information, get_existing_status, get_all_calls
 
 class VapiCaller:
     def __init__(self) -> None:
-
         self.headers = {
     "Authorization": f"Bearer {os.getenv('VAPI_TOKEN')}",
     "Content-Type": "application/json"
@@ -42,6 +28,7 @@ class VapiCaller:
     async def check_call_status(self, call_sid, fieldId=None):
         check_call_url = f"https://api.vapi.ai/call/{call_sid}"
         in_progress_saved = False
+        print(fieldId)
         while True:
             try:
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
@@ -51,7 +38,7 @@ class VapiCaller:
                         phone_number = status_data.get('customer').get('number')
                         first_name = status_data.get('customer').get('name')
                         call_status = status_data.get('status')
-                        # print("Call Status:",call_status)
+                        print("Call Status:",call_status)
 
                         if call_status in ['ended']:
                             existing_status = get_existing_status(id)
@@ -85,6 +72,7 @@ class VapiCaller:
         except Exception as e:
             print(f"Error updating Airtable status: {str(e)}")
 
+
     def fetch_airtable_data(self):
         phone_numbers = []
 
@@ -110,7 +98,7 @@ class VapiCaller:
             print(f"Error fetching data from Airtable: {str(e)}")
 
         return phone_numbers
-    
+
     async def get_calls(self):
         try:
             db_calls = await get_all_calls()
@@ -169,144 +157,3 @@ class VapiCaller:
                             await self.check_call_status(id)
         except Exception as e:
             print(f"Error making call: {str(e)}")
-            
-
-vapi_caller = VapiCaller()
-
-async def schedule_airtable_fetch():
-        try:
-            phone_data_list = vapi_caller.fetch_airtable_data()
-            filtered_data = [
-                phone_data for phone_data in phone_data_list
-                if phone_data.get("relation") == "Séquence en cours"
-                and phone_data.get("statut_dossier") == "Rencensement en attente"
-            ]
-            if filtered_data:
-                await scheduled_call(filtered_data)
-        except Exception as e:
-            print(f"Error scheduling Airtable fetch: {str(e)}")
-
-async def schedule_tasks():
-    try:
-        while True:
-            now = datetime.now()
-            scheduled_time = datetime(now.year, now.month, now.day, 16, 55)  
-            if now < scheduled_time:
-                await asyncio.sleep((scheduled_time - now).total_seconds())
-                await schedule_airtable_fetch()
-            else:
-                tomorrow = now + timedelta(days=1)
-                scheduled_time_tomorrow = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 16, 55)
-                await asyncio.sleep((scheduled_time_tomorrow - now).total_seconds())
-                await schedule_airtable_fetch()
-    except Exception as e:
-        print(f"Error in schedule_tasks: {str(e)}")
-
-
-async def scheduled_call(phone_data_list, tag=None):
-        try:
-            for phone_data in phone_data_list:
-                await vapi_caller.make_call(phone_data)
-        except Exception as e:
-            print(f"Error making scheduled call: {str(e)}")
-        finally:
-            if tag in scheduled_jobs:
-                schedule.clear(tag, scheduled_jobs[tag])
-                del scheduled_jobs[tag]
-
-@app.route("/schedule-call", methods=['POST'])
-def schedule_call():
-    try:
-        request_data = request.json
-        phone_data = request_data.get("phone_data")
-
-        if not phone_data:
-            return "Invalid request data", 400
-        
-        scheduled_time_str = request_data.get("scheduled_time")
-        scheduled_time = datetime.strptime(scheduled_time_str, "%Y-%m-%dT%H:%M")
-
-        now = datetime.now()
-        if scheduled_time <= now:
-            return jsonify({"error": "Scheduled time must be in the future"}), 400
-        
-        tag = f'scheduled_call_{scheduled_time_str}'
-        job = schedule.every().day.at(scheduled_time.strftime("%H:%M")).do(
-            lambda: asyncio.run(scheduled_call(phone_data))
-        )
-        scheduled_jobs[tag] = job
-   
-        return "Call scheduled successfully"
-
-    except Exception as e:
-        return f"Error scheduling call: {str(e)}", 500
-    
-def run_scheduler():
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-
-@app.route("/call-customer", methods=['POST'])
-async def run_call():
-    try:
-        if not request.data:
-            fetched_data = vapi_caller.fetch_airtable_data()
-            for phone_data in fetched_data:
-                try:
-                    await vapi_caller.make_call(phone_data)
-                except Exception as e:
-                    return f"Error making call with Airtable data: {str(e)}", 500
-            return "Calls made using Airtable data"
-        request_data = request.json
-    except Exception as e:
-        return f"Error parsing JSON data: {str(e)}", 400
-    
-    specified_phone_data = request_data.get("phone_data", []) if request_data else []
-    if specified_phone_data:
-        for phone_data in specified_phone_data:
-            try:
-                await vapi_caller.make_call(phone_data)
-            except Exception as e:
-                return f"Error making call with specified data: {str(e)}", 500
-        result_message = "Calls made using specified data."
-    return result_message
-
-
-
-@app.route("/get-all-calls", methods=['GET'])
-async def get_calls():
-    try:
-        all_calls_data = await vapi_caller.get_calls()
-        return all_calls_data      
-    except Exception as e:
-        return f"Error parsing JSON data: {str(e)}", 400
-    
-@app.route("/authenticate", methods=['POST'])
-def authenticate():
-    try:
-        data = request.get_json()
-        email = data.get('email')
-        password = data.get('password')
-
-        if email == admin_email and password == admin_password:
-            return jsonify({'message': 'User Authenticated'})
-
-        return jsonify({'error': 'Invalid credentials'}), 401
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    
-async def run_flask_app():
-    app.run(debug=True)
-
-if __name__ == '__main__':
-    import threading
-    loop = asyncio.get_event_loop()
-    flask_task = loop.create_task(run_flask_app())
-    schedule_task = loop.create_task(schedule_tasks())
-    scheduler_thread = threading.Thread(target=run_scheduler)
-    scheduler_thread.start()
-    loop.run_until_complete(asyncio.gather(flask_task, schedule_task))
-
-
-
-

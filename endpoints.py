@@ -30,7 +30,7 @@ def schedule_call():
         phone_data = request_data.get("phone_data")
 
         if not phone_data:
-            return "Invalid request data", 400
+            return "Invalid request data.", 400
         
         scheduled_time_str = request_data.get("scheduled_time")
         scheduled_time = datetime.strptime(scheduled_time_str, "%Y-%m-%dT%H:%M")

@@ -8,6 +8,7 @@ import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from airtable import airtable
+import threading
 from dotenv import load_dotenv
 from db import save_call_information, get_existing_status, get_all_calls;
 from prompts import combined_promptEnglish, combined_promptFrench;
@@ -51,7 +52,7 @@ class VapiCaller:
                         phone_number = status_data.get('customer').get('number')
                         first_name = status_data.get('customer').get('name')
                         call_status = status_data.get('status')
-                        # print("Call Status:",call_status)
+                        print("Call Status:",call_status)
 
                         if call_status in ['ended']:
                             existing_status = get_existing_status(id)
@@ -187,20 +188,17 @@ async def schedule_airtable_fetch():
             print(f"Error scheduling Airtable fetch: {str(e)}")
 
 async def schedule_tasks():
-    try:
-        while True:
-            now = datetime.now()
-            scheduled_time = datetime(now.year, now.month, now.day, 16, 55)  
-            if now < scheduled_time:
-                await asyncio.sleep((scheduled_time - now).total_seconds())
-                await schedule_airtable_fetch()
-            else:
-                tomorrow = now + timedelta(days=1)
-                scheduled_time_tomorrow = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 16, 55)
-                await asyncio.sleep((scheduled_time_tomorrow - now).total_seconds())
-                await schedule_airtable_fetch()
-    except Exception as e:
-        print(f"Error in schedule_tasks: {str(e)}")
+    while True:
+        now = datetime.now()
+        scheduled_time = datetime(now.year, now.month, now.day, 10, 53)  
+        if now < scheduled_time:
+            await asyncio.sleep((scheduled_time - now).total_seconds())
+            await schedule_airtable_fetch()
+        else:
+            tomorrow = now + timedelta(days=1)
+            scheduled_time_tomorrow = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 10, 53)
+            await asyncio.sleep((scheduled_time_tomorrow - now).total_seconds())
+            await schedule_airtable_fetch()
 
 
 async def scheduled_call(phone_data_list, tag=None):
@@ -241,10 +239,6 @@ def schedule_call():
     except Exception as e:
         return f"Error scheduling call: {str(e)}", 500
     
-def run_scheduler():
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
 
 @app.route("/call-customer", methods=['POST'])
 async def run_call():
@@ -295,18 +289,23 @@ def authenticate():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
-async def run_flask_app():
-    app.run(debug=True)
+def run_flask_app():
+    app.run(debug=True, use_reloader=False)
+
+def run_scheduler():
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
 
 if __name__ == '__main__':
-    import threading
     loop = asyncio.get_event_loop()
-    flask_task = loop.create_task(run_flask_app())
-    schedule_task = loop.create_task(schedule_tasks())
+    flask_thread = threading.Thread(target=run_flask_app)
     scheduler_thread = threading.Thread(target=run_scheduler)
+    flask_thread.start()
     scheduler_thread.start()
-    loop.run_until_complete(asyncio.gather(flask_task, schedule_task))
-
+    loop.create_task(schedule_tasks())
+    loop.run_forever()
 
 
 

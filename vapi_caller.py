@@ -28,7 +28,6 @@ class VapiCaller:
     async def check_call_status(self, call_sid, fieldId=None):
         check_call_url = f"https://api.vapi.ai/call/{call_sid}"
         in_progress_saved = False
-        print(fieldId)
         while True:
             try:
                 async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:

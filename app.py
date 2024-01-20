@@ -6,11 +6,12 @@ import schedule
 from datetime import datetime, timedelta
 import time
 from flask import Flask, request, jsonify
+from flask.json import dumps
 from flask_cors import CORS
 from airtable import airtable
 import threading
 from dotenv import load_dotenv
-from db import save_call_information, get_existing_status, get_all_calls;
+from db import save_call_information, get_existing_status, get_all_calls, get_settings, save_settings, update_settings;
 from prompts import combined_promptEnglish, combined_promptFrench;
 load_dotenv()
 
@@ -20,7 +21,7 @@ CORS(app)
 admin_email = f"{os.getenv('ADMIN_EMAIL')}"
 admin_password = f"{os.getenv('ADMIN_PASSWORD')}"
 scheduled_jobs = {}
-
+ALLOWED_LANGUAGES = {"en"," en-US", "en-AU", "en-GB", "en-NZ", "en-IN", "fr", "fr-CA", "de", "hi", "hi-Latn", "pt", "pt-BR", "es", "es-419"}
 class VapiCaller:
     def __init__(self) -> None:
 
@@ -115,6 +116,7 @@ class VapiCaller:
     async def get_calls(self):
         try:
             db_calls = await get_all_calls()
+            print(db_calls)
             if db_calls:
                 return db_calls
             else:
@@ -123,22 +125,34 @@ class VapiCaller:
             print(f"Exception: {e}")
 
     async def make_call(self, phone_data):
-        first_name = phone_data['first_name']
+        first_name = phone_data.get('first_name')
+        phone_number = phone_data.get('phone_number')
         fieldId = phone_data.get('id', '') 
-        payload = {
+
+        if not first_name or not phone_number:
+            raise ValueError("First name and phone number are required")
+
+        settings = await get_settings('customerIntroductoryCallRelightFR')
+        if not settings:
+            raise ValueError("Settings could not be retrieved")
+        
+        first_message = settings.get('first_message', '').replace('{first_name}', first_name)
+        system_prompt = settings.get('prompt', '')
+        language = settings.get('language', '')
+        payload = { 
         "assistant": {
             "endCallFunctionEnabled": True,
             "endCallMessage": "Thank you for your time, do have a wonderful day.",
             "fillersEnabled": True,
-            "firstMessage": f"Bonjour {first_name}, Ici Roman de l'équipe de relight. Avez-vous un moment pour discuter de la campagne de relighting extérieur?",
+            "firstMessage": first_message,
             "forwardingPhoneNumber": "+33667289667",
             "interruptionsEnabled": False,
-            "language": "fr",
+            "language": language,
             "liveTranscriptsEnabled": True,
             "model": {
                 "model": "gpt-3.5-turbo",
                 "provider": "openai",
-                "systemPrompt": self.combined_promptFrench
+                "systemPrompt": system_prompt
             },
             "name": "Roman",
             "recordingEnabled": True,
@@ -162,12 +176,13 @@ class VapiCaller:
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 async with session.post(self.url, json=payload, headers=self.headers) as response:
                     result = await response.json()
-                    id = result.get('id')
+                    call_id = result.get('id')
                     if result.get("status") == 'queued':
                         if fieldId != '':
-                            await self.check_call_status(id, fieldId)
+                            await self.check_call_status(call_id, fieldId)
                         else:
-                            await self.check_call_status(id)
+                            await self.check_call_status(call_id)
+                    return True
         except Exception as e:
             print(f"Error making call: {str(e)}")
             
@@ -190,13 +205,13 @@ async def schedule_airtable_fetch():
 async def schedule_tasks():
     while True:
         now = datetime.now()
-        scheduled_time = datetime(now.year, now.month, now.day, 10, 53)  
+        scheduled_time = datetime(now.year, now.month, now.day, 13, 0)  
         if now < scheduled_time:
             await asyncio.sleep((scheduled_time - now).total_seconds())
             await schedule_airtable_fetch()
         else:
             tomorrow = now + timedelta(days=1)
-            scheduled_time_tomorrow = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 10, 53)
+            scheduled_time_tomorrow = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 13, 0)
             await asyncio.sleep((scheduled_time_tomorrow - now).total_seconds())
             await schedule_airtable_fetch()
 
@@ -239,7 +254,6 @@ def schedule_call():
     except Exception as e:
         return f"Error scheduling call: {str(e)}", 500
     
-
 @app.route("/call-customer", methods=['POST'])
 async def run_call():
     try:
@@ -265,8 +279,6 @@ async def run_call():
         result_message = "Calls made using specified data."
     return result_message
 
-
-
 @app.route("/get-all-calls", methods=['GET'])
 async def get_calls():
     try:
@@ -274,6 +286,49 @@ async def get_calls():
         return all_calls_data      
     except Exception as e:
         return f"Error parsing JSON data: {str(e)}", 400
+        
+@app.route("/settings", methods=['GET', 'POST', 'PATCH'])
+async def settings():
+    try:
+        if request.method == 'POST':
+            settings_data = request.json
+            prompt_name = settings_data.get('prompt_name')
+            language = settings_data.get('language')
+            first_message = settings_data.get('first_message')
+            prompt = settings_data.get('prompt')
+
+            if language not in ALLOWED_LANGUAGES:
+                return jsonify({"error": f"Invalid language {language}. Allowed languages are: {', '.join(ALLOWED_LANGUAGES)}"}), 400
+
+            await save_settings(prompt_name, language, first_message, prompt)
+            return dumps({"message": "Settings updated"}), 200, {'Content-Type': 'application/json'}
+        elif request.method == 'PATCH':
+            settings_data =  request.json
+            prompt_name = settings_data.get('prompt_name')
+            if not prompt_name:
+                return jsonify({"error": "prompt_name is required"}), 400
+            first_message = settings_data.get('first_message', None)
+            prompt = settings_data.get('prompt', None)
+
+            if not prompt_name:
+                return jsonify({"error": "prompt_name is required"}), 400
+            
+            await update_settings(prompt_name, first_message, prompt)
+            return dumps({"message": "Settings updated"}), 200, {'Content-Type': 'application/json'}
+        else: 
+            prompt_name = request.args.get('prompt_name')
+            if prompt_name:
+                settings = await get_settings(prompt_name)
+            else:
+                return dumps({"error": "Please provide both prompt_name"}), 400, {'Content-Type': 'application/json'}
+            if settings:
+                return dumps(settings), 200, {'Content-Type': 'application/json'}
+            else:
+                return dumps({"error": "Settings not found."}), 404, {'Content-Type': 'application/json'}
+    except ValueError as ve:
+        return dumps({"error": str(ve)}), 400, {'Content-Type': 'application/json'}
+    except Exception as e:
+        return dumps({"error": str(e)}), 500, {'Content-Type': 'application/json'}
     
 @app.route("/authenticate", methods=['POST'])
 def authenticate():

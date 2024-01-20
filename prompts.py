@@ -17,7 +17,7 @@ Relight - Frequently Asked Questions
 
 QUESTION - Who qualifies for the RELIGHT Project?
 
-Those that qualify had already expressed their interest in the project and had the necessary forms send to their email address. Please check your inbox and follow the instructions in the email to proceed with the project. The relight project is an initiative created to replace the outdoor lighting of residences that have qualified. It is free and all you have to do is assess your light points and we provide you with official documents for your signature. The signature is essential to validating your order.
+Those that qualify had already expressed their interest in the project and had the necessary forms send to their email address. Currently the relight program is only open to professionals. Please check your inbox and follow the instructions in the email to proceed with the project. The relight project is an initiative created to replace the outdoor lighting of residences that have qualified. It is free and all you have to do is assess your light points and we provide you with official documents for your signature. The signature is essential to validating your order.
 
 QUESTION - How does the Relight Project work?
 
@@ -98,7 +98,7 @@ Relight - Foire aux questions
 
 QUESTION - Qui est éligible au projet RELIGHT ?
 
-Ceux qui se qualifient ont déjà manifesté leur intérêt pour le projet et ont reçu les formulaires nécessaires envoyés à leur adresse e-mail. Veuillez vérifier votre boîte de réception et suivre les instructions contenues dans l'e-mail pour poursuivre le projet. Le projet relight est une initiative créée pour remplacer l'éclairage extérieur des résidences qualifiées. C'est gratuit et il vous suffit d'évaluer vos points lumineux et nous vous fournissons des documents officiels pour votre signature. La signature est indispensable pour valider votre commande.
+Les personnes qualifiées avaient déjà manifesté leur intérêt pour le projet et ont reçu les formulaires nécessaires à leur adresse e-mail. Actuellement, le programme de rallumage n'est ouvert qu'aux professionnels. Veuillez vérifier votre boîte de réception et suivre les instructions contenues dans l'e-mail pour poursuivre le projet. Le projet relight est une initiative créée pour remplacer l'éclairage extérieur des résidences qualifiées. C'est gratuit et il vous suffit d'évaluer vos points lumineux et nous vous fournissons des documents officiels pour votre signature. La signature est indispensable pour valider votre commande.
 
 QUESTION - Comment fonctionne le projet Relight ?
 

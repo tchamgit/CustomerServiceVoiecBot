@@ -22,8 +22,8 @@ class VapiCaller:
     "Authorization": f"Bearer {os.getenv('VAPI_TOKEN')}",
     "Content-Type": "application/json"
     }
-        self.combined_promptEnglish = combined_promptEnglish
         self.combined_promptFrench= combined_promptFrench
+        self.combined_promptEnglish = combined_promptEnglish
         self.phone_number_id = f"{os.getenv('PHONE_NUMBER_ID')}"
 
         self.url = "https://api.vapi.ai/call/phone"
